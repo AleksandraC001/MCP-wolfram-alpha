@@ -22,7 +22,7 @@ class WolframAlphaJSONClient:
         }
         
         async with httpx.AsyncClient() as client:
-            response = await client.get(self.base_url, params=params)
+            response = await client.get(self.base_url, params=params, timeout=10.0)
             response.raise_for_status()
             
             return response.json()

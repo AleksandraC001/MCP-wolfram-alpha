@@ -1,4 +1,7 @@
 import base64
+import time
+import traceback
+
 from mcp.server.models import InitializationOptions
 from mcp.server.lowlevel import NotificationOptions, Server
 import mcp.types as types
@@ -88,6 +91,7 @@ async def handle_call_tool(
 
     if name == "query-wolfram-alpha":
         results: list[types.TextContent | types.ImageContent | types.EmbeddedResource] = []
+        found_image = False
         query = arguments.get("query")
         if not query:
             raise ValueError("Missing 'query' parameter for Wolfram Alpha tool")
@@ -95,8 +99,12 @@ async def handle_call_tool(
         try:
             response = await client.aquery(query)
         except Exception as e:
-            raise Exception("Failed to query Wolfram Alpha") from e
-        
+            # time.sleep(5)
+            # try:
+            #     response = await client.aquery(query)
+            # except Exception as f:
+            raise Exception("Failed to query Wolfram Alpha" + traceback.format_exc()) from e
+
         try:
             async with httpx.AsyncClient() as http_client:
                 for pod in response.pods:
@@ -107,21 +115,34 @@ async def handle_call_tool(
                                 type="text",
                                 text=subpod.plaintext
                             ))
+
+                        if subpod.img:
+                            found_image = True
                             
-                        elif subpod.img:  # Handle image content
-                            img_url = subpod.img.get("src")
-                            if img_url:
-                                img_response = await http_client.get(img_url)
-                                if img_response.status_code == 200:
-                                    img_base64 = base64.b64encode(img_response.content).decode('utf-8')
-                                    results.append(types.ImageContent(
-                                        type="image",
-                                        data=img_base64,
-                                        mimeType="image/png"
-                                    ))
+                        # elif subpod.img:  # Handle image content
+                        #     img_url = subpod.img.get("src")
+                        #     if img_url:
+                        #         img_response = await http_client.get(img_url)
+                        #         if img_response.status_code == 200:
+                        #             img_base64 = base64.b64encode(img_response.content).decode('utf-8')
+                        #             results.append(types.ImageContent(
+                        #                 type="image",
+                        #                 data=img_base64,
+                        #                 mimeType="image/png"
+                        #             ))
         except Exception as e:
             raise Exception("Failed to parse response from Wolfram Alpha") from e
 
+        if found_image and not results:
+            results.append(types.TextContent(
+                type="text",
+                text="Result from Wolfram contains an image you cannot parse. Try something else."
+            ))
+        if not results:
+            results.append(types.TextContent(
+                type="text",
+                text="No results found."
+            ))
         return results
 
     raise ValueError(f"Unknown tool: {name}")
